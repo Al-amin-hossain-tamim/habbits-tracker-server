@@ -97,16 +97,50 @@ async function run() {
     });
     // update my habbit api
 
-    app.patch(`/habbits/:id`,async(req,res)=>{
-      const id = req.params.id;
-      const updateHabit = req.body;
-      const query = {_id: new ObjectId(id)}
-      const update = {
-        $set:updateHabit
-      }
-      const result = await habbitCollection.updateOne(query,update)
-      res.send(result)
-    })
+    // PATCH: update habit + push date into completionHistory (if provided)
+app.patch("/habbits/:id", async (req, res) => {
+  const id = req.params.id;
+  const { addDate, ...fields } = req.body;
+
+  const query = { _id: new ObjectId(id) };
+
+  let update = { $set: fields };
+
+  // If frontend sends addDate → push into completionHistory array
+  if (addDate) {
+    update.$addToSet = { completionHistory: addDate };
+  }
+
+  const result = await habbitCollection.updateOne(query, update);
+
+  // Fetch updated habit
+  const updatedHabit = await habbitCollection.findOne(query);
+
+  // Compute streak
+  const history = updatedHabit.completionHistory || [];
+  let streak = 0;
+  let check = new Date();
+
+  while (true) {
+    const day = check.toISOString().split("T")[0];
+    if (history.includes(day)) {
+      streak++;
+      check.setDate(check.getDate() - 1);
+    } else break;
+  }
+
+  // Save streak in DB
+  await habbitCollection.updateOne(query, { $set: { currentStreak: streak } });
+
+  updatedHabit.currentStreak = streak;
+
+  res.send({
+    success: true,
+    habit: updatedHabit,
+    currentStreak: streak,
+  });
+});
+
 // delete api 
     app.delete("/habbits/:id", async (req, res) => {
       const id = req.params.id;
